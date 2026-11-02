@@ -4998,7 +4998,16 @@ body.is-resizing { cursor: row-resize; user-select: none; -webkit-user-select: n
  "todos": [
   "이심",
   "여행자보험",
-  "환전"
+  "환전",
+  {
+   "text": "Visit Japan Web 등록 (입국심사·세관신고 QR 코드)",
+   "links": [
+    {
+     "title": "Visit Japan Web 공식 사이트",
+     "url": "https://www.vjw.digital.go.jp/"
+    }
+   ]
+  }
  ],
  "notes": [
   {
@@ -5808,12 +5817,13 @@ body.is-resizing { cursor: row-resize; user-select: none; -webkit-user-select: n
     else body.innerHTML = notesPageHTML();
     body.dataset.built = '1';
   }
-  // 문자열 또는 { text, sub[], diffs[] }
+  // 문자열 또는 { text, sub[], diffs[], links[{title,url}] }
   function listHTML(arr) {
     if (!arr || !arr.length) return '<div class="empty">항목이 없습니다.</div>';
     return `<ul class="plain">${arr.map((x) => {
       const o = typeof x === 'string' ? { text: x } : x;
-      const subs = (o.sub || []).map((s) => `<li>${esc(s)}</li>`).join('') + (o.diffs || []).map((d) => `<li class="diff">조사 결과: ${esc(d)}</li>`).join('');
+      const links = (o.links || []).map((l) => extLink(l.url, `${esc(l.title)} ↗`)).filter(Boolean).join(' · ');
+      const subs = (o.sub || []).map((s) => `<li>${esc(s)}</li>`).join('') + (o.diffs || []).map((d) => `<li class="diff">조사 결과: ${esc(d)}</li>`).join('') + (links ? `<li>${links}</li>` : '');
       return `<li>${esc(o.text)}${subs ? `<ul>${subs}</ul>` : ''}</li>`;
     }).join('')}</ul>`;
   }
