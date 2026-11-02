@@ -302,7 +302,9 @@ body.is-resizing { cursor: row-resize; user-select: none; -webkit-user-select: n
 .tt-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
 .tt { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums; }
 .tt th, .tt td { padding: 6px 10px; border-bottom: 1px solid var(--line-2); text-align: center; white-space: nowrap; }
-.tt th { position: sticky; top: 0; background: #fbfaf7; font-size: 12.5px; vertical-align: bottom; }
+/* 가로 스크롤 상자 안에서는 페이지 기준 sticky 가 안 걸리므로, 버스 표는 상자 자체에 높이를 줘 세로로도 그 안에서 스크롤 → 정류장 머리가 위에 붙어 있다 */
+.tt-scroll.tt-v { max-height: min(70vh, 560px); overflow: auto; }
+.tt th { position: sticky; top: 0; z-index: 1; background: #fbfaf7; box-shadow: inset 0 -1px var(--line); font-size: 12.5px; vertical-align: bottom; }
 .tt th small { display: block; font-weight: 500; color: var(--muted); font-size: 11px; }
 .tt td.nt { text-align: left; color: var(--muted); font-size: 12px; white-space: normal; min-width: 120px; }
 .tt tr.is-plan td { background: var(--sel); font-weight: 800; }
@@ -5880,7 +5882,7 @@ body.is-resizing { cursor: row-resize; user-select: none; -webkit-user-select: n
         return `<tr${days.length ? ' class="is-plan"' : ''}>${tr.times.map((x) => (x ? `<td>${esc(x)}</td>` : '<td class="na">—</td>')).join('')}<td class="nt">${badges}${esc(tr.note || '')}</td></tr>`;
       }).join('');
       return `<section class="tt-dir"><h3>${esc(first.ko || first.ja)} → ${esc(last.ko || last.ja)}</h3><p><span lang="ja">${esc(first.ja)} → ${esc(last.ja)}</span> · ${dir.trips.length}편 · 「—」는 서지 않는 정류장</p>
-        <div class="tt-scroll"><table class="tt"><thead>${head}</thead><tbody>${rows || `<tr><td colspan="${dir.stops.length + 1}">편 자료가 없습니다.</td></tr>`}</tbody></table></div></section>`;
+        <div class="tt-scroll tt-v"><table class="tt"><thead>${head}</thead><tbody>${rows || `<tr><td colspan="${dir.stops.length + 1}">편 자료가 없습니다.</td></tr>`}</tbody></table></div></section>`;
     }).join('');
     return `<div class="tt-head"><h2>${esc(t.title || '')}</h2>${t.titleJa ? `<p lang="ja">${esc(t.titleJa)}</p>` : ''}</div>
       <div class="d-sec">${ttFactsHTML(t, extra)}</div>
