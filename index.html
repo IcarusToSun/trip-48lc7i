@@ -297,6 +297,8 @@ body.is-resizing { cursor: row-resize; user-select: none; -webkit-user-select: n
 .tt-head h2 { margin: 0; font-size: 21px; }
 .tt-head p { margin: 2px 0 0; color: var(--muted); font-size: 13.5px; }
 .tt-dir { margin-top: 22px; }
+#tt-dir { margin-top: 22px; }
+#tt-dir + .tt-dir { margin-top: 10px; }
 .tt-dir h3 { margin: 0; font-size: 16px; }
 .tt-dir > p { margin: 0 0 8px; color: var(--muted); font-size: 12.5px; }
 .tt-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
@@ -5121,17 +5123,22 @@ body.is-resizing { cursor: row-resize; user-select: none; -webkit-user-select: n
     return es;
   }
 
-  // ---------- 라우팅: #plan[/날짜[/항목]] · #todo · #food · #notes · #timetable/<bus-city|bus-myoken|ferry>
+  // ---------- 라우팅: #plan[/날짜[/항목]] · #todo · #food · #notes · #timetable/<bus-city|bus-myoken|ferry>[/<방향 key>]
   const VIEWS = ['plan', 'todo', 'food', 'notes', 'timetable'];
   const TT_IDS = ['bus-city', 'bus-myoken', 'ferry'];
   const lastHash = { plan: '#plan', todo: '#todo', food: '#food', notes: '#notes', timetable: '#timetable/bus-city' };
   let navFromList = false; // 휴대폰: 지금 상세가 그날 목록에서 눌러 기록에 쌓은 것인가(그때만 「← 목록」이 뒤로 가기)
   let lastBus = 'bus-city'; // 시간표에서 페리 → 공항버스로 돌아올 때 열 노선
+  const lastDir = {}; // 노선별 마지막으로 본 방향(노선 탭을 오가도 그 방향으로)
   function parseHash() {
     let h;
     try { h = decodeURIComponent(location.hash.replace(/^#/, '')); } catch { h = 'plan'; } // 깨진 %인코딩이면 계획표로
     const [view, a, b] = h.split('/');
-    if (view === 'timetable') return { view, tt: TT_IDS.includes(a) ? a : 'bus-city' };
+    if (view === 'timetable') {
+      const tt = TT_IDS.includes(a) ? a : 'bus-city';
+      const dirs = (TT[tt] && TT[tt].dirs) || [];
+      return { view, tt, dir: dirs.some((d) => d.key === b) ? b : null };
+    }
     if (VIEWS.includes(view) && view !== 'plan') return { view };
     const day = a && dayByDate.has(a) ? a : 'all';
     const item = day !== 'all' && b && entriesOf(dayByDate.get(day).day).some((e) => e.id === b) ? b : null;
@@ -5149,10 +5156,10 @@ body.is-resizing { cursor: row-resize; user-select: none; -webkit-user-select: n
     const r = parseHash();
     if (!(r.view === 'plan' && r.item)) navFromList = false;
     lastHash[r.view] = location.hash || '#plan';
-    if (r.view === 'timetable' && r.tt !== 'ferry') lastBus = r.tt; // 주소·「시간표 전체 보기」로 들어온 노선도 기억
+    if (r.view === 'timetable' && r.tt !== 'ferry') { lastBus = r.tt; if (r.dir) lastDir[r.tt] = r.dir; } // 주소·「시간표 전체 보기」로 들어온 노선·방향도 기억
     showView(r.view);
     if (r.view === 'plan') renderPlan(r.day, r.item);
-    else if (r.view === 'timetable') renderTimetable(r.tt);
+    else if (r.view === 'timetable') renderTimetable(r.tt, r.dir);
     else renderPage(r.view);
   }
 
@@ -5630,7 +5637,7 @@ body.is-resizing { cursor: row-resize; user-select: none; -webkit-user-select: n
     const x = item.detail || {};
     const actions = extLink(gmaps(place), ICON.pin + '구글맵에서 열기', 'btn btn-primary') +
       extLink((s && s.official) || x.official, '공식 사이트 ↗', 'btn') +
-      (item.tt ? `<a class="btn" href="#timetable/${esc(item.tt.id)}">시간표 전체 보기</a>` : '');
+      (item.tt ? `<a class="btn" href="#timetable/${esc(item.tt.id)}${item.tt.dir ? '/' + esc(item.tt.dir) : ''}">시간표 전체 보기</a>` : '');
     const body = [
       mineHTML(item.userNotes, item.diffs),
       item.memo ? sec('메모', `<p>${esc(item.memo)}</p>`) : '',
@@ -5845,7 +5852,7 @@ body.is-resizing { cursor: row-resize; user-select: none; -webkit-user-select: n
 
   // ---------- 시간표
   let ferrySvc = null; // 페리 표: 평일 / 토·일·공휴일
-  function renderTimetable(id) {
+  function renderTimetable(id, dirKey) {
     const isBus = id !== 'ferry';
     $$('#tt-seg button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tt === (isBus ? 'bus' : 'ferry'))));
     const sub = $('#tt-sub');
@@ -5858,7 +5865,7 @@ body.is-resizing { cursor: row-resize; user-select: none; -webkit-user-select: n
       sub.dataset.built = '1';
     }
     $$('#tt-sub button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.ttId === id)));
-    $('#tt-body').innerHTML = isBus ? busTableHTML(id) : ferryTableHTML();
+    $('#tt-body').innerHTML = isBus ? busTableHTML(id, dirKey) : ferryTableHTML();
     $('#tt-body').dataset.cur = id;
   }
   function ttFactsHTML(t, extra) {
@@ -5869,25 +5876,34 @@ body.is-resizing { cursor: row-resize; user-select: none; -webkit-user-select: n
       { label: '시간표 기준', value: t.revision ? `${t.revision} ${t.kind === 'ferry' ? '시행' : '개정'}` : t.revisionText || '확인 필요' },
     ]);
   }
-  function busTableHTML(id) {
+  // 방향(공항 → 시내 / 시내 → 공항)은 탭으로 나눠 한 번에 하나만 그린다. dirKey 가 없으면 첫 방향
+  function busTableHTML(id, dirKey) {
     const t = TT[id];
     if (!t) return '<div class="empty">시간표 자료가 없습니다.</div>';
     const extra = t.nearestStop ? [{ label: '숙소 가까운 정류장', value: `${stopLabel(t.nearestStop)}${t.nearestStop.walk ? ' · ' + t.nearestStop.walk : ''}` }] : [];
-    const dirs = (t.dirs || []).map((dir) => {
-      const first = dir.stops[0], last = dir.stops[dir.stops.length - 1];
+    const all = t.dirs || [];
+    const cur = all.find((d) => d.key === dirKey) || all[0];
+    const ends = (dir) => [dir.stops[0], dir.stops[dir.stops.length - 1]];
+    const dirTabs = all.length > 1 ? `<div class="seg seg-sub" id="tt-dir" role="tablist" aria-label="방향">${all.map((dir) => {
+      const [a, z] = ends(dir);
+      return `<button type="button" role="tab" data-dir="${esc(dir.key)}" aria-selected="${dir === cur}"><span>${esc(a.ko || a.ja)} → ${esc(z.ko || z.ja)}</span><small lang="ja">${esc(a.ja)} → ${esc(z.ja)}</small></button>`;
+    }).join('')}</div>` : '';
+    const dirs = (cur ? [cur] : []).map((dir) => {
+      const [first, last] = ends(dir);
       const head = `<tr>${dir.stops.map((s) => `<th scope="col"><span>${esc(s.ko || s.ja)}</span><small lang="ja">${esc(s.ko ? s.ja : '')}</small></th>`).join('')}<th scope="col">비고</th></tr>`;
       const rows = dir.trips.map((tr, i) => {
         const days = PLAN_TRIPS.get(`${id}/${dir.key}/${i}`) || [];
         const badges = days.map((d) => `<span class="pl" style="--c:${esc(d.color)}">${dayInfo(d.date).short} 계획</span>`).join('');
         return `<tr${days.length ? ' class="is-plan"' : ''}>${tr.times.map((x) => (x ? `<td>${esc(x)}</td>` : '<td class="na">—</td>')).join('')}<td class="nt">${badges}${esc(tr.note || '')}</td></tr>`;
       }).join('');
-      return `<section class="tt-dir"><h3>${esc(first.ko || first.ja)} → ${esc(last.ko || last.ja)}</h3><p><span lang="ja">${esc(first.ja)} → ${esc(last.ja)}</span> · ${dir.trips.length}편 · 「—」는 서지 않는 정류장</p>
+      const title = dirTabs ? '' : `<h3>${esc(first.ko || first.ja)} → ${esc(last.ko || last.ja)}</h3>`; // 탭이 있으면 탭 이름이 제목
+      return `<section class="tt-dir">${title}<p>${dirTabs ? '' : `<span lang="ja">${esc(first.ja)} → ${esc(last.ja)}</span> · `}${dir.trips.length}편 · 「—」는 서지 않는 정류장</p>
         <div class="tt-scroll tt-v"><table class="tt"><thead>${head}</thead><tbody>${rows || `<tr><td colspan="${dir.stops.length + 1}">편 자료가 없습니다.</td></tr>`}</tbody></table></div></section>`;
     }).join('');
     return `<div class="tt-head"><h2>${esc(t.title || '')}</h2>${t.titleJa ? `<p lang="ja">${esc(t.titleJa)}</p>` : ''}</div>
       <div class="d-sec">${ttFactsHTML(t, extra)}</div>
       ${notesHTML((t.notes || []).map((x) => (typeof x === 'string' ? { text: x } : x)))}
-      ${dirs}${sourcesHTML([t])}`;
+      ${dirTabs}${dirs}${sourcesHTML([t])}`;
   }
   function ferryTableHTML() {
     const t = TT.ferry;
@@ -5931,9 +5947,12 @@ body.is-resizing { cursor: row-resize; user-select: none; -webkit-user-select: n
     const ov = t.closest('tr[data-day]');
     if (ov) { go(`#plan/${ov.dataset.day}`, true); return; }
     const seg = t.closest('#tt-seg button');
-    if (seg) { go(seg.dataset.tt === 'ferry' ? '#timetable/ferry' : `#timetable/${lastBus}`, true); return; }
+    const busHash = (id) => `#timetable/${id}${lastDir[id] ? '/' + lastDir[id] : ''}`;
+    if (seg) { go(seg.dataset.tt === 'ferry' ? '#timetable/ferry' : busHash(lastBus), true); return; }
     const sub = t.closest('#tt-sub button');
-    if (sub) { lastBus = sub.dataset.ttId; go(`#timetable/${lastBus}`, true); return; }
+    if (sub) { lastBus = sub.dataset.ttId; go(busHash(lastBus), true); return; }
+    const dr = t.closest('#tt-dir button');
+    if (dr) { lastDir[lastBus] = dr.dataset.dir; go(busHash(lastBus), true); return; }
     const sv = t.closest('#ferry-svc button');
     if (sv) { ferrySvc = sv.dataset.svc; renderTimetable('ferry'); }
   });
